@@ -11,7 +11,7 @@ class AudioEngine(QThread):
         self.p = pyaudio.PyAudio()
         self.stream = None
         self.running = False
-        self.chunk_size = 1024
+        self.chunk_size = 2048
         self.format = pyaudio.paInt16
         self.channels = 2
         self.rate = 44100
@@ -93,12 +93,33 @@ class AudioEngine(QThread):
                     avg_mag = np.mean(usable_mag) if len(usable_mag) > 0 else 0
                     
                     if len(usable_mag) >= bars and bars > 0 and avg_mag > NOISE_FLOOR:
-                        bin_size = len(usable_mag) // bars
+                        # Logarithmic binning to spread out low frequencies across more bars
+                        min_freq_bin = 1
+                        max_freq_bin = len(usable_mag)
+                        bin_edges = np.logspace(np.log10(min_freq_bin), np.log10(max_freq_bin), num=bars + 1)
+                        
+                        prev_end = 0
                         for i in range(bars):
-                            start = i * bin_size
-                            end = start + bin_size
+                            start = int(bin_edges[i]) - 1
+                            end = int(bin_edges[i+1]) - 1
+                            
+                            # Ensure bins don't overlap and at least 1 bin is covered
+                            start = max(start, prev_end)
+                            end = max(end, start + 1)
+                            
+                            # Clamp to valid indices
+                            start = max(0, min(start, len(usable_mag) - 1))
+                            end = max(0, min(end, len(usable_mag)))
+                            
+                            prev_end = end
+                            
+                            if start < end:
+                                mean_val = np.mean(usable_mag[start:end])
+                            else:
+                                mean_val = 0.0
+                                
                             # Subtract noise floor to eliminate static
-                            val = max(0.0, np.mean(usable_mag[start:end]) - NOISE_FLOOR)
+                            val = max(0.0, mean_val - NOISE_FLOOR)
                             
                             # Update dynamic max (slowly decay to adapt to quieter parts)
                             if val > self.max_val:
