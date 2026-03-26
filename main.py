@@ -99,6 +99,7 @@ def main():
     # Cleanup
     audio_engine.stop()
     audio_engine.wait()
+    media_provider.stop()
     sys.exit(exit_code)
 
 if __name__ == "__main__":

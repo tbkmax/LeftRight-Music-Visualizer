@@ -1,3 +1,5 @@
-- change smoothing_factor when sound became larger (will not go high too fast also not drop too fast), will change back to default color (RMS (Root Mean Square)?)
+- change color when sound became larger (will not go high too fast also not drop too fast), will change back to default color (RMS (Root Mean Square)?) like when average sound current became larger add point and lower will minus point that it will have another color (total 2 color, one is default color) and by the change of the value it will perform the transiton between 2 color. For example that if default color is blue and color 2 is red, when value is 0 is blue but when larger sound dectect (add point) it will like also like add red, and when value is in 1 it will became red. I know adding red to blue will not make blue go close to red, if there is no way to perfomance this than just like when it goto 0.5 will like change to white and from 0.5 to 1 is from white to red. 
 
-- change default color based on the BPM? (Real-Time Detection: Aubio?), don't change too fast even if it first detect that BPM change like stay 2 to 3 second before chaning
+- change default smoothing_factor based on the BPM? (Real-Time Detection: Aubio?) Don't change too fast
+
+- make it add point when BPM go faster (have max limit) and go down when BPM go slower (the lowest is default )

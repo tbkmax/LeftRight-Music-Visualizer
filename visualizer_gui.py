@@ -87,6 +87,8 @@ class VisualizerWidget(QWidget):
             radius = max_radius * (1.0 - getattr(self.settings, 'bar_roundness', 1.0))
             
             painter.drawRoundedRect(rect, radius, radius)
+            
+        painter.end()
 
 
 class OverlayWindow(QMainWindow):
