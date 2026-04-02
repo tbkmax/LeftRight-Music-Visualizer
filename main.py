@@ -1,4 +1,5 @@
 import sys
+import os
 import signal
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QAction
@@ -9,12 +10,18 @@ from media_info import MediaInfoProvider
 from audio_engine import AudioEngine
 from visualizer_gui import OverlayWindow
 
+def resource_path(relative_path):
+    """ Get absolute path to resource, works for dev and for PyInstaller """
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath(os.path.dirname(__file__)), relative_path)
+
 def main():
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
     
     # Setup System Tray Icon
-    tray_icon = QSystemTrayIcon(QIcon("icon.ico"), app)
+    tray_icon = QSystemTrayIcon(QIcon(resource_path("icon.ico")), app)
     tray_icon.setToolTip("Music Visualizer")
     tray_menu = QMenu()
     

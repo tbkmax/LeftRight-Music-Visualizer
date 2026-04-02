@@ -202,9 +202,14 @@ class AudioEngine(QThread):
                     if hasattr(self, 'max_val'):
                         self.max_val = max(200.0, self.max_val * 0.98)
                 
-                # Rate limit emission to ~60 FPS (approx 16ms)
+                # Rate limit emission based on settings.refresh_rate to prevent Qt event queue memory leaks
                 current_time = time.perf_counter()
-                if current_time - self.last_emit_time >= 0.016:
+                
+                # Prevent divide by zero and set a reasonable upper bound to ensure UI can keep up
+                safe_refresh_rate = max(1, self.settings.refresh_rate)
+                target_delay = 1.0 / safe_refresh_rate
+                
+                if current_time - self.last_emit_time >= target_delay:
                     self.audio_data_updated.emit(binned_data)
                     self.last_emit_time = current_time
                 
