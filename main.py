@@ -1,6 +1,7 @@
 import sys
 import signal
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
+from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import QTimer
 
 from settings import SettingsManager
@@ -10,6 +11,32 @@ from visualizer_gui import OverlayWindow
 
 def main():
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
+    
+    # Setup System Tray Icon
+    tray_icon = QSystemTrayIcon(QIcon("icon.ico"), app)
+    tray_icon.setToolTip("Music Visualizer")
+    tray_menu = QMenu()
+    
+    settings_dialog = None
+    def show_settings():
+        nonlocal settings_dialog
+        if settings_dialog is None:
+            from settings_gui import SettingsDialog
+            settings_dialog = SettingsDialog(settings_manager)
+        settings_dialog.show()
+        settings_dialog.raise_()
+        settings_dialog.activateWindow()
+
+    settings_action = QAction("Settings", app)
+    settings_action.triggered.connect(show_settings)
+    tray_menu.addAction(settings_action)
+
+    exit_action = QAction("Exit", app)
+    exit_action.triggered.connect(app.quit)
+    tray_menu.addAction(exit_action)
+    tray_icon.setContextMenu(tray_menu)
+    tray_icon.show()
     
     # Ensure Ctrl+C closes the application gracefully
     signal.signal(signal.SIGINT, lambda sig, frame: app.quit())

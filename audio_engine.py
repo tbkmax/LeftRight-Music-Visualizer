@@ -46,6 +46,7 @@ class AudioEngine(QThread):
                 if self.channels == 0:
                     self.channels = 2
                     
+                self.actual_rate = rate
                 self.stream = self.p.open(format=self.format,
                                           channels=self.channels,
                                           rate=rate,
@@ -70,9 +71,10 @@ class AudioEngine(QThread):
                 if self.channels == 0:
                     self.channels = 2
     
+                self.actual_rate = int(default_speakers["defaultSampleRate"])
                 self.stream = self.p.open(format=self.format,
                                           channels=self.channels,
-                                          rate=int(default_speakers["defaultSampleRate"]),
+                                          rate=self.actual_rate,
                                           input=True,
                                           input_device_index=device_index,
                                           frames_per_buffer=self.chunk_size)
@@ -111,19 +113,46 @@ class AudioEngine(QThread):
                     self.max_val = 1.0
 
                 NOISE_FLOOR = 30.0
-                usable_mag = fft_mag[1:len(fft_mag)//2] 
+                scale_setting = getattr(self.settings, 'frequency_scale', 'log')
+                use_mel = scale_setting in ['mel', 'mel_a_weight']
+                use_a_weighting = scale_setting == 'mel_a_weight'
+                
+                if use_mel:
+                    if hasattr(self, 'actual_rate'):
+                        hz_per_bin = self.actual_rate / self.chunk_size
+                    else:
+                        hz_per_bin = 48000 / self.chunk_size
+                    max_hz = 16000.0
+                    max_bin = min(len(fft_mag) - 1, int(max_hz / hz_per_bin))
+                    max_bin = max(max_bin, 2)
+                    usable_mag = fft_mag[1:max_bin]
+                else:
+                    usable_mag = fft_mag[1:len(fft_mag)//2] 
+                    
                 avg_mag = np.mean(usable_mag) if len(usable_mag) > 0 else 0
                 
                 if len(usable_mag) >= bars and bars > 0 and avg_mag > NOISE_FLOOR:
-                    min_freq_bin = 1
-                    max_freq_bin = len(usable_mag)
-                    
-                    if not hasattr(self, '_cached_bin_edges') or len(self._cached_bin_edges) != bars + 1 or getattr(self, '_last_max_freq_bin', 0) != max_freq_bin:
-                        self._cached_bin_edges = np.logspace(np.log10(min_freq_bin), np.log10(max_freq_bin), num=bars + 1)
-                        self._last_max_freq_bin = max_freq_bin
-                    bin_edges = self._cached_bin_edges
+                    if use_mel:
+                        if not hasattr(self, '_cached_bin_edges_mel') or len(self._cached_bin_edges_mel) != bars + 1 or getattr(self, '_last_max_bin_mel', 0) != max_bin:
+                            min_mel = 2595.0 * np.log10(1.0 + hz_per_bin / 700.0)
+                            max_mel = 2595.0 * np.log10(1.0 + max_hz / 700.0)
+                            mel_points = np.linspace(min_mel, max_mel, bars + 1)
+                            hz_points = 700.0 * (10.0**(mel_points / 2595.0) - 1.0)
+                            bin_edges = hz_points / hz_per_bin
+                            self._cached_bin_edges_mel = bin_edges
+                            self._last_max_bin_mel = max_bin
+                        bin_edges = self._cached_bin_edges_mel
+                    else:
+                        min_freq_bin = 1
+                        max_freq_bin = len(usable_mag)
+                        
+                        if not hasattr(self, '_cached_bin_edges_log') or len(self._cached_bin_edges_log) != bars + 1 or getattr(self, '_last_max_freq_bin_log', 0) != max_freq_bin:
+                            self._cached_bin_edges_log = np.logspace(np.log10(min_freq_bin), np.log10(max_freq_bin), num=bars + 1)
+                            self._last_max_freq_bin_log = max_freq_bin
+                        bin_edges = self._cached_bin_edges_log
                     
                     prev_end = 0
+                    raw_vals = []
                     for i in range(bars):
                         start = int(bin_edges[i]) - 1
                         end = int(bin_edges[i+1]) - 1
@@ -138,13 +167,35 @@ class AudioEngine(QThread):
                         else:
                             mean_val = 0.0
                             
-                        val = max(0.0, mean_val - NOISE_FLOOR)
-                        if val > self.max_val:
-                            self.max_val = val
+                        if use_mel:
+                            if use_a_weighting:
+                                center_hz = hz_per_bin * (start + end + 2) / 2.0
+                                if center_hz <= 0:
+                                    freq_weight = 0.0
+                                else:
+                                    f2 = center_hz**2
+                                    num = (12194.0**2) * (f2**2)
+                                    den = (f2 + 20.6**2) * np.sqrt((f2 + 107.7**2) * (f2 + 737.9**2)) * (f2 + 12194.0**2)
+                                    freq_weight = (num / den) * 1.2589
+                                    # Boost A-weighting slightly overall so bass doesn't fall completely below noise floor
+                                    freq_weight *= 2.0
+                            else:
+                                freq_weight = 1.0 + (2.0 * (i / max(1, bars - 1)))
+                                
+                            val = max(0.0, (mean_val * freq_weight) - NOISE_FLOOR)
                         else:
-                            self.max_val = max(200.0, self.max_val * 0.98)
-                            
+                            val = max(0.0, mean_val - NOISE_FLOOR)
+                        raw_vals.append(val)
+                        
+                    current_max = max(raw_vals) if raw_vals else 0.0
+                    if current_max > self.max_val:
+                        self.max_val = current_max
+                    else:
+                        self.max_val = max(1000.0, self.max_val * 0.99)
+                        
+                    for val in raw_vals:
                         normalized_val = val / self.max_val if self.max_val > 0 else 0
+                        normalized_val = normalized_val ** 1.2
                         binned_data.append(min(1.0, normalized_val))
                 else:
                     binned_data = [0.0] * bars
