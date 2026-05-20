@@ -1,8 +1,14 @@
+import os
+import subprocess
+import sys
+
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QFormLayout, QSpinBox, QDoubleSpinBox, 
-    QLineEdit, QLabel, QScrollArea, QWidget, QPushButton
+    QDialog, QVBoxLayout, QFormLayout, QSpinBox, QDoubleSpinBox,
+    QLineEdit, QLabel, QScrollArea, QWidget, QPushButton, QComboBox, QApplication
 )
 from PyQt6.QtCore import Qt
+
+import pyaudiowpatch as pyaudio
 
 class SettingsDialog(QDialog):
     def __init__(self, settings_manager, parent=None):
@@ -32,8 +38,15 @@ class SettingsDialog(QDialog):
         # Manually iterate to create appropriate inputs and connect their signals 
         for field_name, field_info in self.settings.model_fields.items():
             current_value = getattr(self.settings, field_name)
-            
-            if isinstance(current_value, bool):
+
+            if field_name == "audio_device_index":
+                widget = QComboBox()
+                self._populate_audio_devices(widget)
+                self._select_audio_device(widget, int(current_value))
+                widget.currentIndexChanged.connect(
+                    self._make_combo_updater(field_name, widget)
+                )
+            elif isinstance(current_value, bool):
                 # Pass bools for now as there are none
                 pass
             elif isinstance(current_value, int):
@@ -68,6 +81,11 @@ class SettingsDialog(QDialog):
         reset_btn.setStyleSheet("padding: 5px; color: #ff5555; font-weight: bold;")
         reset_btn.clicked.connect(self.reset_to_defaults)
         layout.addWidget(reset_btn)
+
+        restart_btn = QPushButton("Restart App")
+        restart_btn.setStyleSheet("padding: 5px; color: #55cc55; font-weight: bold;")
+        restart_btn.clicked.connect(self.restart_app)
+        layout.addWidget(restart_btn)
         
     def reset_to_defaults(self):
         from settings import VisualizerSettings
@@ -81,9 +99,74 @@ class SettingsDialog(QDialog):
                     widget.setValue(default_val)
                 elif isinstance(widget, QLineEdit):
                     widget.setText(str(default_val))
+                elif isinstance(widget, QComboBox):
+                    self._select_audio_device(widget, int(default_val))
+
+    def restart_app(self):
+        self.settings_manager.save()
+
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable]
+        else:
+            cmd = [sys.executable, os.path.abspath(sys.argv[0])]
+
+        cmd.extend(sys.argv[1:])
+        cwd = os.path.dirname(os.path.abspath(sys.argv[0]))
+
+        try:
+            subprocess.Popen(cmd, cwd=cwd)
+        except Exception as exc:
+            print(f"Failed to restart application: {exc}")
+            return
+
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
     def _make_updater(self, field_name):
         def updater(value):
             setattr(self.settings, field_name, value)
             self.settings_manager.save()
         return updater
+
+    def _make_combo_updater(self, field_name, combo_box):
+        def updater(_index):
+            data = combo_box.currentData()
+            if data is None:
+                return
+            setattr(self.settings, field_name, int(data))
+            self.settings_manager.save()
+        return updater
+
+    def _populate_audio_devices(self, combo_box):
+        combo_box.clear()
+        combo_box.addItem("Default system loopback (-1)", -1)
+
+        try:
+            p = pyaudio.PyAudio()
+        except Exception:
+            combo_box.addItem("(Could not load audio devices)", -1)
+            return
+
+        try:
+            for i in range(p.get_device_count()):
+                dev = p.get_device_info_by_index(i)
+                if not dev.get("isLoopbackDevice", False):
+                    continue
+                name = dev.get("name", "Unknown Device")
+                channels = dev.get("maxInputChannels", 0)
+                if channels == 0:
+                    channels_text = "2 (Virtual)"
+                else:
+                    channels_text = str(int(channels))
+                label = f"{i} | {channels_text} ch | {name}"
+                combo_box.addItem(label, int(i))
+        finally:
+            p.terminate()
+
+    def _select_audio_device(self, combo_box, device_index):
+        for i in range(combo_box.count()):
+            if combo_box.itemData(i) == device_index:
+                combo_box.setCurrentIndex(i)
+                return
+        combo_box.setCurrentIndex(0)
