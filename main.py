@@ -115,6 +115,8 @@ def main():
         # Apply geometry AFTER the screen is definitively set and handles exist
         left_window.setGeometry(left_x, left_y, window_width, window_height)
         right_window.setGeometry(right_x, right_y, window_width, window_height)
+        left_window.ensure_topmost()
+        right_window.ensure_topmost()
 
         windows.extend([left_window, right_window])
 

@@ -1,7 +1,32 @@
 import sys
 from PyQt6.QtWidgets import QWidget, QMainWindow
-from PyQt6.QtCore import Qt, QRectF
+from PyQt6.QtCore import Qt, QRectF, QTimer
 from PyQt6.QtGui import QPainter, QColor
+
+if sys.platform == "win32":
+    import ctypes
+    from ctypes import wintypes
+
+    HWND_TOPMOST = wintypes.HWND(-1)
+    SWP_NOSIZE = 0x0001
+    SWP_NOMOVE = 0x0002
+    SWP_NOACTIVATE = 0x0010
+    SWP_SHOWWINDOW = 0x0040
+    SWP_NOOWNERZORDER = 0x0200
+
+    _user32 = ctypes.windll.user32
+    _user32.SetWindowPos.argtypes = (
+        wintypes.HWND,
+        wintypes.HWND,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_uint,
+    )
+    _user32.SetWindowPos.restype = wintypes.BOOL
+else:
+    _user32 = None
 
 class VisualizerWidget(QWidget):
     def __init__(self, settings, parent=None):
@@ -101,13 +126,42 @@ class OverlayWindow(QMainWindow):
             Qt.WindowType.WindowStaysOnTopHint | 
             Qt.WindowType.FramelessWindowHint | 
             Qt.WindowType.Tool |
+            Qt.WindowType.WindowDoesNotAcceptFocus |
             Qt.WindowType.WindowTransparentForInput # Make it click-through so user can interact with apps behind
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         
         self.visualizer = VisualizerWidget(settings, self)
         self.setCentralWidget(self.visualizer)
+
+        self._topmost_timer = QTimer(self)
+        self._topmost_timer.setInterval(1000)
+        self._topmost_timer.timeout.connect(self.ensure_topmost)
+        self._topmost_timer.start()
          
     def update_bars(self, bars):
         # We can implement smoothing here if we want (e.g., exponential moving average)
         self.visualizer.set_bars(bars)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self.ensure_topmost)
+        QTimer.singleShot(250, self.ensure_topmost)
+
+    def ensure_topmost(self):
+        if _user32 is None or not self.isVisible():
+            return
+
+        hwnd = int(self.winId())
+        if not hwnd:
+            return
+
+        flags = (
+            SWP_NOMOVE |
+            SWP_NOSIZE |
+            SWP_NOACTIVATE |
+            SWP_SHOWWINDOW |
+            SWP_NOOWNERZORDER
+        )
+        _user32.SetWindowPos(wintypes.HWND(hwnd), HWND_TOPMOST, 0, 0, 0, 0, flags)
