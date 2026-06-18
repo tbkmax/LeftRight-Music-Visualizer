@@ -26,11 +26,15 @@ def main():
     tray_menu = QMenu()
     
     settings_dialog = None
+    audio_engine = None
+    
     def show_settings():
-        nonlocal settings_dialog
+        nonlocal settings_dialog, audio_engine
         if settings_dialog is None:
             from settings_gui import SettingsDialog
             settings_dialog = SettingsDialog(settings_manager)
+            if audio_engine is not None:
+                audio_engine.audio_data_updated.connect(settings_dialog.update_energy_display)
         settings_dialog.show()
         settings_dialog.raise_()
         settings_dialog.activateWindow()
@@ -126,7 +130,11 @@ def main():
     # Connect audio updates to all windows
     for window in windows:
         audio_engine.audio_data_updated.connect(window.update_bars)
-    
+        
+    # If settings dialog is already open when audio_engine is created
+    if settings_dialog is not None:
+        audio_engine.audio_data_updated.connect(settings_dialog.update_energy_display)
+        
     # Start capturing
     audio_engine.start()
 

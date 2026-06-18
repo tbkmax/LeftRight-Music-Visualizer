@@ -14,12 +14,14 @@ class VisualizerSettings(BaseModel):
     bar_width: int = Field(default=20, description="Thickness of each bar in pixels")
     bar_spacing: int = Field(default=8, description="Spacing between bars in pixels")
     max_width: int = Field(default=200, description="Maximum length of the bars in pixels")
-    audio_device_index: int = Field(default=18, description="Index of the PyAudio device to use. Leave as -1 to use the default system loopback.")
+    audio_device_index: int = Field(default=-1, description="Index of the PyAudio device to listen to. -1 means default system output (loopback).")
     smoothing_factor: float = Field(default=0.4, description="Controls bar smoothness (0.0 to 0.99). Higher is smoother but slower.")
     default_transparency: float = Field(default=0.7, description="Default opacity of the bars when the mouse is away (0.0=invisible to 1.0=solid).")
     bar_roundness: float = Field(default=0.5, description="Roundness of the bars. 1.0 = Square, 0.0 = Fully rounded.")
+    color_reactivity: float = Field(default=1.0, description="Intensity multiplier for color transformations (0.0 to 3.0)", ge=0.0, le=3.0)
     target_screen: str = Field(default="all", description="Target screen index to display on ('all', '0', '1', etc).")
     frequency_scale: str = Field(default="mel_a_weight", description="Frequency scaling method ('log' for standard, 'mel' for vocal spread, 'mel_a_weight' for A-weighted).")
+    energy_color_modulation: bool = Field(default=True, description="Enable Energy & Saturation Color Modulation based on Loudness.")
 
 class SettingsManager:
     def __init__(self, filename: str = SETTINGS_FILE):

@@ -3,3 +3,5 @@ PyAudioWPatch>=0.2.12.post3
 winsdk>=1.0.0.dev1
 numpy>=1.26.0
 pydantic>=2.5.0
+scipy>=1.11.0
+

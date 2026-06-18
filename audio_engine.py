@@ -1,10 +1,33 @@
 import pyaudiowpatch as pyaudio
 import numpy as np
 import time
+import warnings
+from scipy.signal import butter, lfilter, find_peaks
 from PyQt6.QtCore import QThread, pyqtSignal
 
+warnings.filterwarnings('ignore')
+
+def butter_bandpass(lowcut, highcut, fs, order=3):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = butter(order, [low, high], btype='band')
+    return b, a
+
+def butter_highpass(cutoff, fs, order=2):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='high', analog=False)
+    return b, a
+
+def butter_lowpass(cutoff, fs, order=3):
+    nyq = 0.5 * fs
+    normal_cutoff = cutoff / nyq
+    b, a = butter(order, normal_cutoff, btype='low', analog=False)
+    return b, a
+
 class AudioEngine(QThread):
-    audio_data_updated = pyqtSignal(list)
+    audio_data_updated = pyqtSignal(list, float, float, float)
 
     def __init__(self, settings, parent=None):
         super().__init__(parent)
@@ -18,6 +41,10 @@ class AudioEngine(QThread):
         self.rate = 44100
         self.last_emit_time = 0
         self.error_count = 0
+        self.raw_audio_buffer = np.zeros(0, dtype=np.float32)
+        self.last_calc_time = 0
+        self.current_sps = 0.0
+        self.current_onsets = 0.0
 
     def _setup_stream(self):
         """Initializes PyAudio and opens the audio stream."""
@@ -89,6 +116,16 @@ class AudioEngine(QThread):
         if not self._setup_stream():
             self.running = False
             return
+            
+        # Pre-compute filter coefficients once actual_rate is known
+        self.sps_bp_b, self.sps_bp_a = butter_bandpass(300.0, 3400.0, self.actual_rate, order=3)
+        self.sps_lp_b, self.sps_lp_a = butter_lowpass(15.0, self.actual_rate, order=3)
+        
+        self.onset_hp_b, self.onset_hp_a = butter_highpass(100.0, self.actual_rate, order=2)
+        self.onset_lp_b, self.onset_lp_a = butter_lowpass(30.0, self.actual_rate, order=3)
+        
+        self.max_samples = int(self.actual_rate * 1.0) # 1 second window
+        self.last_calc_time = time.perf_counter()
 
         while self.running:
             try:
@@ -103,16 +140,29 @@ class AudioEngine(QThread):
                 if self.channels == 2:
                     audio_data = audio_data.reshape(-1, 2).mean(axis=1)
                     
-                fft_data = np.fft.rfft(audio_data)
-                fft_mag = np.abs(fft_data)
+                # Store raw floats for SciPy filters
+                float_audio_data = audio_data.astype(np.float32) / 32768.0
+                self.raw_audio_buffer = np.concatenate((self.raw_audio_buffer, float_audio_data))
+                if len(self.raw_audio_buffer) > self.max_samples:
+                    self.raw_audio_buffer = self.raw_audio_buffer[-self.max_samples:]
+                    
+                # ---------------------------------------------------------
+                # FIX 1: Apply Hanning Window to normalized floats for FFT
+                # This prevents massive low-frequency spikes from spectral leakage
+                # ---------------------------------------------------------
+                window = np.hanning(self.chunk_size)
+                windowed_audio = float_audio_data[-self.chunk_size:] * window
+                fft_data = np.fft.rfft(windowed_audio)
+                fft_mag = np.abs(fft_data) * 2.0 # Standard float magnitude
                 
                 bars = self.settings.bar_count
                 binned_data = []
                 
                 if not hasattr(self, 'max_val'):
-                    self.max_val = 1.0
+                    self.max_val = 0.01 # Start low
 
-                NOISE_FLOOR = 30.0
+                # Lower noise floor because we are now using normalized floats instead of huge int16s
+                NOISE_FLOOR = 0.005 
                 scale_setting = getattr(self.settings, 'frequency_scale', 'log')
                 use_mel = scale_setting in ['mel', 'mel_a_weight']
                 use_a_weighting = scale_setting == 'mel_a_weight'
@@ -177,7 +227,6 @@ class AudioEngine(QThread):
                                     num = (12194.0**2) * (f2**2)
                                     den = (f2 + 20.6**2) * np.sqrt((f2 + 107.7**2) * (f2 + 737.9**2)) * (f2 + 12194.0**2)
                                     freq_weight = (num / den) * 1.2589
-                                    # Boost A-weighting slightly overall so bass doesn't fall completely below noise floor
                                     freq_weight *= 2.0
                             else:
                                 freq_weight = 1.0 + (2.0 * (i / max(1, bars - 1)))
@@ -187,40 +236,72 @@ class AudioEngine(QThread):
                             val = max(0.0, mean_val - NOISE_FLOOR)
                         raw_vals.append(val)
                         
+                    # ---------------------------------------------------------
+                    # FIX 2: Fast Auto-Gain Decay
+                    # Drops the ceiling much faster so the visualizer stays dynamic
+                    # ---------------------------------------------------------
                     current_max = max(raw_vals) if raw_vals else 0.0
                     if current_max > self.max_val:
                         self.max_val = current_max
                     else:
-                        self.max_val = max(1000.0, self.max_val * 0.99)
+                        self.max_val = max(0.01, self.max_val * 0.85) # 0.85 creates a great bounce!
                         
                     for val in raw_vals:
+                        # Squash small values below noise floor, normalize the rest
+                        val = max(0.0, val - NOISE_FLOOR)
                         normalized_val = val / self.max_val if self.max_val > 0 else 0
                         normalized_val = normalized_val ** 1.2
                         binned_data.append(min(1.0, normalized_val))
                 else:
                     binned_data = [0.0] * bars
                     if hasattr(self, 'max_val'):
-                        self.max_val = max(200.0, self.max_val * 0.98)
+                        self.max_val = max(0.01, self.max_val * 0.85)
                 
-                # Rate limit emission based on settings.refresh_rate to prevent Qt event queue memory leaks
+                # Calculate Loudness
+                loudness = float(np.mean(binned_data)) if binned_data else 0.0
+                
+                # ---------------------------------------------------------
+                # FIX 3: Instantaneous Pulses instead of Rolling Smears
+                # ---------------------------------------------------------
                 current_time = time.perf_counter()
                 
-                # Prevent divide by zero and set a reasonable upper bound to ensure UI can keep up
+                if len(self.raw_audio_buffer) >= self.max_samples:
+                    if current_time - self.last_calc_time >= 0.05: # Update faster (20fps) for visuals
+                        self.last_calc_time = current_time
+                        
+                        # -- SPS (Vocal Band) Instant Pulse --
+                        sps_filtered = lfilter(self.sps_bp_b, self.sps_bp_a, self.raw_audio_buffer)
+                        sps_env = lfilter(self.sps_lp_b, self.sps_lp_a, np.abs(sps_filtered))
+                        
+                        # Grab the max envelope value of ONLY the most recent chunk of audio
+                        instant_sps = np.max(sps_env[-self.chunk_size:])
+                        # Amplify and cap at 1.0 for a clean visual multiplier
+                        self.current_sps = min(1.0, float(instant_sps * 15.0)) 
+                            
+                        # -- Onsets (Broadband Hits) Instant Pulse --
+                        onset_filtered = lfilter(self.onset_hp_b, self.onset_hp_a, self.raw_audio_buffer)
+                        onset_env = lfilter(self.onset_lp_b, self.onset_lp_a, np.abs(onset_filtered))
+                        
+                        # Grab the max envelope value of ONLY the most recent chunk of audio
+                        instant_onset = np.max(onset_env[-self.chunk_size:])
+                        self.current_onsets = min(1.0, float(instant_onset * 10.0))
+
+                # Rate limit emission
                 safe_refresh_rate = max(1, self.settings.refresh_rate)
                 target_delay = 1.0 / safe_refresh_rate
                 
                 if current_time - self.last_emit_time >= target_delay:
-                    self.audio_data_updated.emit(binned_data)
+                    # current_sps and current_onsets are now bouncing floats between 0.0 and 1.0!
+                    self.audio_data_updated.emit(binned_data, loudness, self.current_sps, self.current_onsets)
                     self.last_emit_time = current_time
                 
-                self.error_count = 0 # Reset error count on success
+                self.error_count = 0 
                 
             except Exception as e:
                 self.error_count += 1
-                # If error happens, wait a bit to avoid CPU spike
                 time.sleep(0.1)
                 if self.error_count > 10:
-                    print(f"Too many audio errors ({e}), attempting re-initialization...")
+                    print(f"Audio error ({e}), re-initializing...")
                     self._setup_stream()
                     self.error_count = 0
                     time.sleep(0.5)

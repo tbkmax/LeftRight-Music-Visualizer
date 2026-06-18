@@ -28,6 +28,10 @@ class SettingsDialog(QDialog):
         info_label.setStyleSheet("color: gray; margin-bottom: 10px;")
         layout.addWidget(info_label)
         
+        self.energy_label = QLabel("Live Energy (45/40/15): --")
+        self.energy_label.setStyleSheet("font-weight: bold; color: #cc55cc; margin-bottom: 10px;")
+        layout.addWidget(self.energy_label)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll_content = QWidget()
@@ -47,8 +51,10 @@ class SettingsDialog(QDialog):
                     self._make_combo_updater(field_name, widget)
                 )
             elif isinstance(current_value, bool):
-                # Pass bools for now as there are none
-                pass
+                from PyQt6.QtWidgets import QCheckBox
+                widget = QCheckBox()
+                widget.setChecked(current_value)
+                widget.toggled.connect(self._make_updater(field_name))
             elif isinstance(current_value, int):
                 widget = QSpinBox()
                 widget.setRange(-10, 10000)
@@ -86,7 +92,14 @@ class SettingsDialog(QDialog):
         restart_btn.setStyleSheet("padding: 5px; color: #55cc55; font-weight: bold;")
         restart_btn.clicked.connect(self.restart_app)
         layout.addWidget(restart_btn)
-        
+
+    def update_energy_display(self, bars, loudness, sps, onsets):
+        norm_sps = max(0.0, min(1.0, sps))
+        norm_onsets = max(0.0, min(1.0, onsets))
+        norm_loudness = max(0.0, min(1.0, loudness * 3.5))
+        composite_energy = (norm_sps * 0.45) + (norm_onsets * 0.40) + (norm_loudness * 0.15)
+        self.energy_label.setText(f"Live Energy (45/40/15): {composite_energy * 100:.1f}%")
+
     def reset_to_defaults(self):
         from settings import VisualizerSettings
         default_settings = VisualizerSettings()
