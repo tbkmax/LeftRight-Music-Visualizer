@@ -45,6 +45,9 @@ class AudioEngine(QThread):
         self.last_calc_time = 0
         self.current_sps = 0.0
         self.current_onsets = 0.0
+        # --- NEW VARIABLES ADDED BELOW ---
+        self.sps_max = 0.01
+        self.onset_max = 0.01
 
     def _setup_stream(self):
         """Initializes PyAudio and opens the audio stream."""
@@ -272,19 +275,30 @@ class AudioEngine(QThread):
                         # -- SPS (Vocal Band) Instant Pulse --
                         sps_filtered = lfilter(self.sps_bp_b, self.sps_bp_a, self.raw_audio_buffer)
                         sps_env = lfilter(self.sps_lp_b, self.sps_lp_a, np.abs(sps_filtered))
-                        
-                        # Grab the max envelope value of ONLY the most recent chunk of audio
                         instant_sps = np.max(sps_env[-self.chunk_size:])
-                        # Amplify and cap at 1.0 for a clean visual multiplier
-                        self.current_sps = min(1.0, float(instant_sps * 15.0)) 
+                        
+                        # Auto-gain decay for SPS
+                        if instant_sps > self.sps_max:
+                            self.sps_max = instant_sps
+                        else:
+                            # 0.98 provides a smooth, natural breathing decay for vocals
+                            self.sps_max = max(0.01, self.sps_max * 0.98) 
+                            
+                        self.current_sps = min(1.0, float(instant_sps / self.sps_max))
                             
                         # -- Onsets (Broadband Hits) Instant Pulse --
                         onset_filtered = lfilter(self.onset_hp_b, self.onset_hp_a, self.raw_audio_buffer)
                         onset_env = lfilter(self.onset_lp_b, self.onset_lp_a, np.abs(onset_filtered))
-                        
-                        # Grab the max envelope value of ONLY the most recent chunk of audio
                         instant_onset = np.max(onset_env[-self.chunk_size:])
-                        self.current_onsets = min(1.0, float(instant_onset * 10.0))
+                        
+                        # Auto-gain decay for Onsets
+                        if instant_onset > self.onset_max:
+                            self.onset_max = instant_onset
+                        else:
+                            # 0.95 drops the ceiling faster so punchy beats stay sharp
+                            self.onset_max = max(0.01, self.onset_max * 0.95) 
+                            
+                        self.current_onsets = min(1.0, float(instant_onset / self.onset_max))
 
                 # Rate limit emission
                 safe_refresh_rate = max(1, self.settings.refresh_rate)
