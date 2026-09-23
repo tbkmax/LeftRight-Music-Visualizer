@@ -1,4 +1,4 @@
-# Music Visualizer Project Plan
+# Music Visualizer Project
 
 An "Always on Top" bar-shaped music visualizer for Windows.
 
