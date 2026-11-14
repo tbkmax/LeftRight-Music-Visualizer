@@ -1,20 +1,18 @@
 import sys
-import os
 import signal
+from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from PyQt6.QtGui import QIcon, QAction
 from PyQt6.QtCore import QTimer
 
-from settings import SettingsManager
-from media_info import MediaInfoProvider
-from audio_engine import AudioEngine
-from visualizer_gui import OverlayWindow
+from .settings import SettingsManager
+from .media_info import MediaInfoProvider
+from .audio_engine import AudioEngine
+from .visualizer_gui import OverlayWindow
 
 def resource_path(relative_path):
-    """ Get absolute path to resource, works for dev and for PyInstaller """
-    if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath(os.path.dirname(__file__)), relative_path)
+    """Return the path to a bundled package asset."""
+    return str(Path(__file__).resolve().parent / "assets" / relative_path)
 
 def main():
     app = QApplication(sys.argv)
@@ -31,7 +29,7 @@ def main():
     def show_settings():
         nonlocal settings_dialog, audio_engine
         if settings_dialog is None:
-            from settings_gui import SettingsDialog
+            from .settings_gui import SettingsDialog
             settings_dialog = SettingsDialog(settings_manager)
             if audio_engine is not None:
                 audio_engine.audio_data_updated.connect(settings_dialog.update_energy_display)
@@ -144,7 +142,7 @@ def main():
     audio_engine.stop()
     audio_engine.wait()
     media_provider.stop()
-    sys.exit(exit_code)
+    return exit_code
 
 if __name__ == "__main__":
     main()

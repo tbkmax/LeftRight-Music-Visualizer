@@ -1,0 +1,2 @@
+"""Windows desktop music visualizer."""
+

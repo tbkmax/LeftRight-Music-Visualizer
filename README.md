@@ -1,6 +1,48 @@
-# Music Visualizer Project
+# LeftRight Music Visualizer
 
-An "Always on Top" bar-shaped music visualizer for Windows.
+An always-on-top, bar-shaped music visualizer for Windows. It captures system
+audio through WASAPI loopback and displays bars at both edges of the screen.
+
+## Install and run
+
+From the project root in PowerShell, using Python 3.11 or newer:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m left_right_music_visualizer
+```
+
+The editable install also provides a `left-right-music-visualizer` command.
+Settings are saved to `settings.json` in the current working directory. Run
+from the project root to keep using an existing project-root settings file.
+
+To run the unit tests:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+```
+
+To build a standalone Windows executable, install the build extra and run the
+PowerShell build script:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e '.[build]'
+.\scripts\build.ps1
+```
+
+The executable is written to `dist/`. The audio diagnostic scripts in
+`scripts/` can be run directly with the virtual environment's Python.
+
+## Project layout
+
+```text
+src/left_right_music_visualizer/  Application package and bundled tray icon
+tests/                            Unit tests
+scripts/                          Audio diagnostics and Windows build script
+doc/                              Design notes and decisions
+pyproject.toml                    Package metadata, dependencies, entry point
+```
 
 ## Key Features
 - **Always on Top**: Resides on top of all windows (ideal for desktop personalization).

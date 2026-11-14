@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "left-right-music-visualizer"
+version = "0.1.0"
+description = "Always-on-top Windows audio visualizer with left and right bars"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "PyQt6>=6.6.0",
+    "PyAudioWPatch>=0.2.12.post3",
+    "winsdk>=1.0.0.dev1",
+    "numpy>=1.26.0",
+    "pydantic>=2.5.0",
+    "scipy>=1.11.0",
+]
+classifiers = [
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6"]
+
+[project.gui-scripts]
+left-right-music-visualizer = "left_right_music_visualizer.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+left_right_music_visualizer = ["assets/*.ico"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+

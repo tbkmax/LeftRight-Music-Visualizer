@@ -2,9 +2,9 @@ import time
 import unittest
 from unittest.mock import MagicMock, patch
 import numpy as np
-from audio_engine import AudioEngine
-from media_info import MediaInfoProvider
-from settings import SettingsManager
+from left_right_music_visualizer.audio_engine import AudioEngine
+from left_right_music_visualizer.media_info import MediaInfoProvider
+from left_right_music_visualizer.settings import SettingsManager
 
 class TestFixVerification(unittest.TestCase):
     def setUp(self):

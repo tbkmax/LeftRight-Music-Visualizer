@@ -1,4 +1,3 @@
-import os
 import subprocess
 import sys
 
@@ -101,7 +100,7 @@ class SettingsDialog(QDialog):
         self.energy_label.setText(f"Live Energy (45/40/15): {composite_energy * 100:.1f}%")
 
     def reset_to_defaults(self):
-        from settings import VisualizerSettings
+        from .settings import VisualizerSettings
         default_settings = VisualizerSettings()
         for field_name in self.settings.model_fields.keys():
             default_val = getattr(default_settings, field_name)
@@ -121,13 +120,12 @@ class SettingsDialog(QDialog):
         if getattr(sys, "frozen", False):
             cmd = [sys.executable]
         else:
-            cmd = [sys.executable, os.path.abspath(sys.argv[0])]
+            cmd = [sys.executable, "-m", "left_right_music_visualizer"]
 
         cmd.extend(sys.argv[1:])
-        cwd = os.path.dirname(os.path.abspath(sys.argv[0]))
 
         try:
-            subprocess.Popen(cmd, cwd=cwd)
+            subprocess.Popen(cmd)
         except Exception as exc:
             print(f"Failed to restart application: {exc}")
             return
